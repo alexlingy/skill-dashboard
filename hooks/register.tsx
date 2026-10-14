@@ -30,9 +30,16 @@ const ALIASES: Record<string, string> = {
   pipeline: 'academic-pipeline',
 }
 
-/** The dashboard id a skill or command name stands for: `plugin:name` matches on `name`. */
+/** Plugins whose skills these are; another plugin's skill of the same name (`anthropic-skills:deep-research`) is not. */
+const OWNERS = ['academic-research-skills', 'academic-humanizer']
+
+/** The dashboard id a skill or command name stands for: bare `name`, or `owner:name` from one of OWNERS. */
 function idOf(name: string): string | undefined {
-  const bare = name.split(':').pop() ?? name
+  const parts = name.split(':')
+  const bare = parts.pop() ?? name
+  if (parts.length > 0 && !OWNERS.includes(parts.join(':'))) {
+    return undefined
+  }
   return SKILLS.find(one => one.id === bare)?.id
 }
 

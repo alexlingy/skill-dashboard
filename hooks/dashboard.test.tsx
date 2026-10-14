@@ -40,6 +40,10 @@ test('switches, one-shot buttons and trigger counts work on every surface', asyn
     await $.prompt.submit({ text: 'find papers', wait: false, origin: { kind: 'composer' } })
     expect(await dashboardText(compose)).toContain('THIS request')
 
+    // Another plugin's skill of the same name is not counted.
+    await $.skill.prompt({ skill: 'anthropic-skills:deep-research', text: 'x', frontmatter: {}, source: 'plugin' })
+    expect(await ui.find({ type: 'Text', text: /本回合觸發：無/ })).toBeDefined()
+
     // A skill loading shows up as triggered.
     await $.skill.prompt({ skill: 'academic-research-skills:deep-research', text: 'x', frontmatter: {}, source: 'plugin' })
     expect(await ui.find({ type: 'Text', text: /已觸發 \d+ 次/ })).toBeDefined()
