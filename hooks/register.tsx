@@ -22,10 +22,23 @@ const hitsThisTurn = atom({ plugin: 'skill-dashboard', key: 'hitsThisTurn' } as 
 const installed = atom({ plugin: 'skill-dashboard', key: 'installed' } as const, {})
 const turn = atom({ plugin: 'skill-dashboard', key: 'turn' } as const, 0)
 
+const ALIASES: Record<string, string> = {
+  humanizer: 'academic-humanizer',
+  research: 'deep-research',
+  paper: 'academic-paper',
+  reviewer: 'academic-paper-reviewer',
+  pipeline: 'academic-pipeline',
+}
+
 /** The dashboard id a skill or command name stands for: `plugin:name` matches on `name`. */
 function idOf(name: string): string | undefined {
   const bare = name.split(':').pop() ?? name
   return SKILLS.find(one => one.id === bare)?.id
+}
+
+function idOfTyped(word: string): string | undefined {
+  const lower = word.toLowerCase()
+  return ALIASES[lower] ?? idOf(lower)
 }
 
 function toggled(list: readonly string[], id: string): string[] {
@@ -76,6 +89,28 @@ async function sectionText($: EngineInterface): Promise<string | null> {
   return lines.length > 0 ? ['# Skill dashboard', ...lines].join('\n') : null
 }
 
+async function statusText($: EngineInterface): Promise<string> {
+  const always = await read($, pinned)
+  const once = await read($, armed)
+  const counts = await read($, hits)
+  const names = await read($, installed)
+  const rows = SKILLS.map(skill => {
+    const hit = counts[skill.id]
+    const parts = [
+      always.includes(skill.id) ? '常駐 ON' : '常駐 OFF',
+      once.includes(skill.id) ? '⚡ 下一則待命' : null,
+      hit ? `已觸發 ${hit.count} 次（第 ${hit.lastTurn} 則）` : '未觸發',
+      names[skill.id] ? null : '未安裝',
+    ].filter(Boolean)
+    return `${skill.label}：${parts.join(' · ')}`
+  })
+  const thisTurn = await read($, hitsThisTurn)
+
+  return [...rows, `本回合觸發：${thisTurn.length > 0 ? thisTurn.join('、') : '無'}`].join('\n')
+}
+
+const USAGE = '用法：/skill-dashboard [on|off|once] [humanizer|research|paper|reviewer|pipeline]'
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const stored = await $.store.get('pinned')
@@ -91,11 +126,31 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: COMMAND }, async $ => {
-    await refreshInstalled($)
-    await $.ui.open({ id: PANE, title: 'Skills 儀表板' })
+  on('command.run', { command: COMMAND }, async ($, e) => {
+    const [verb = '', word = ''] = e.args.trim().split(/\s+/)
+    if (verb !== '') {
+      const id = idOfTyped(word)
+      if (!id || !['on', 'off', 'once'].includes(verb.toLowerCase())) {
+        return { text: USAGE }
+      }
+      const always = await read($, pinned)
+      const verbLower = verb.toLowerCase()
+      if (verbLower === 'once') {
+        await update($, armed, list => (list.includes(id) ? list : [...list, id]))
+      } else if ((verbLower === 'on') !== always.includes(id)) {
+        await togglePinned($, id)
+      }
 
-    return { text: 'Skill dashboard opened.' }
+      return { text: await statusText($) }
+    }
+
+    await refreshInstalled($)
+    const opened = await $.ui.open({ id: PANE, title: 'Skills 儀表板' })
+    const note = opened.isPlaced
+      ? '側邊面板已打開。'
+      : `這個 app 目前沒有顯示側邊面板（${opened.reason}），開關改放在輸入框上方。`
+
+    return { text: [note, await statusText($), USAGE].join('\n\n') }
   })
 
   on('prompt.submit', async ($, e, next) => {
@@ -136,6 +191,36 @@ export const register: Register = on => {
     }
 
     return { sections: [...composed.sections, { id: 'skill-dashboard:active', text, scope: 'session' }] }
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const panes = await $.ui.panes()
+    const isPaneDrawn = panes.some(one => one.id === PANE && one.isPlaced && one.isShown)
+    if (e.props.hasSurvey || isPaneDrawn) {
+      return next(e)
+    }
+
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const always = await read($, pinned)
+    const once = await read($, armed)
+    const thisTurn = await read($, hitsThisTurn)
+
+    return (
+      <Box flexDirection="column">
+        {SKILLS.map(skill => (
+          <Box key={skill.id}>
+            <Button key={`pin:${skill.id}`} onPress={() => togglePinned($, skill.id)}>
+              {always.includes(skill.id) ? <Text color="green">━━●</Text> : <Text dimColor>○━━</Text>}
+            </Button>
+            <Text> </Text>
+            <Button key={`once:${skill.id}`} onPress={() => toggleArmed($, skill.id)}>
+              {once.includes(skill.id) ? <Text color="yellow">⚡</Text> : <Text dimColor>⚡</Text>}
+            </Button>
+            <Text> {skill.label}{thisTurn.includes(skill.id) ? ' ✓ 本回合已觸發' : ''}</Text>
+          </Box>
+        ))}
+      </Box>
+    )
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
