@@ -4,6 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Hit } from '../types'
 
 const PANE = 'skill-dashboard'
+const COMMAND = 'skill-dashboard'
 
 const SKILLS = [
   { id: 'academic-humanizer', label: 'Academic Humanizer', scope: 'editing AI-assisted academic prose or grant proposals for clarity and voice' },
@@ -80,14 +81,17 @@ export const register: Register = on => {
     const stored = await $.store.get('pinned')
     const ids = Array.isArray(stored) ? stored.filter((one): one is string => typeof one === 'string' && idOf(one) === one) : []
     await update($, pinned, () => ids)
-    await refreshInstalled($)
-    await $.command.register({ name: 'skills', description: 'Open the skill dashboard panel' })
     void $.ui.open({ id: PANE, title: 'Skills 儀表板' })
+    await refreshInstalled($)
+    // `/skills` is a built-in command, so the dashboard's own is named after the plugin.
+    await $.command
+      .register({ name: COMMAND, description: 'Open the skill dashboard panel' })
+      .catch(() => $.ui.toast(`skill-dashboard: could not register /${COMMAND}`))
 
     return next(e)
   })
 
-  on('command.run', { command: 'skills' }, async $ => {
+  on('command.run', { command: COMMAND }, async $ => {
     await refreshInstalled($)
     await $.ui.open({ id: PANE, title: 'Skills 儀表板' })
 
