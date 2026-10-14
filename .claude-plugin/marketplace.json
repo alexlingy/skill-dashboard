@@ -1,0 +1,14 @@
+{
+  "name": "skill-dashboard",
+  "owner": {
+    "name": "alexlingy",
+    "url": "https://github.com/alexlingy"
+  },
+  "plugins": [
+    {
+      "name": "skill-dashboard",
+      "source": "./"
+    }
+  ],
+  "description": "Side-panel dashboard for academic-humanizer and the academic-research-skills suite"
+}
