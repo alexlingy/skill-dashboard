@@ -12,26 +12,29 @@ A Claude Code side panel for five academic skills: see whether each one actually
 ## 面板
 
 ```
-Academic Humanizer
-[━━● 常駐 ON]  [⚡ 下一則]
-已觸發 2 次 · 最近：第 5 則訊息
+▾ Skills  1 常駐 · ✓ 1
 
-Deep Research (未安裝)
-[○━━ 常駐 OFF] [⚡ 下一則：待命]
-本次對話尚未觸發
-…
+▸ Academic Humanizer  ✓          ⚡ [    ● ]   ← 橘底：常駐開
+▸ Deep Research                  ⚡ [ ●    ]   ← 灰底：常駐關
+▾ Academic Paper                 ⚡ [ ●    ]
+    論文規劃、撰寫、修訂
+    常駐：關 · ⚡ 下一則：未啟用
+    本次對話尚未觸發
+▸ Paper Reviewer                 ⚡ [ ●    ]
+▸ Academic Pipeline              ⚡ [ ●    ]
+
 本回合觸發：academic-humanizer
 ```
 
-- **常駐 ON/OFF**：開啟後，只要請求落在該 skill 的範圍內，Claude 會先載入它再回答。設定會記住（存在這台機器上）。
-- **⚡ 下一則**：只對你送出的下一則訊息強制使用該 skill，用完自動關閉。
-- **已觸發 / 本回合觸發**：skill 每次真的被載入（打 `/指令`、Claude 自己呼叫、或按鈕觸發）都會記錄。它顯示的是「有沒有被載入」，不是「每句話是否都套用了規則」。
-- **(未安裝)**：這台機器的 Claude Code 沒有裝該 skill。
+- **滑動開關（右側）**：橘底、圓點在右＝常駐開；灰底、圓點在左＝關。開啟後，只要請求落在該 skill 的範圍內，Claude 會先載入它再回答。設定會記住（存在這台機器上）。
+- **⚡ 下一則**：只對你送出的下一則訊息強制使用該 skill，用完自動關閉；待命時亮橘色。
+- **✓**：這個 skill 在本回合真的被載入了（打 `/指令`、Claude 自己呼叫、或按鈕觸發都算）。它顯示的是「有沒有被載入」，不是「每句話是否都套用了規則」。
+- **收合**：點最上面的「▾ Skills」把整個面板收成一行摘要；點各 skill 名稱展開說明、觸發次數與安裝狀態。
+- 配色用 Claude 主題的顏色，跟著淺色/深色主題變化。面板只在側邊，不會出現在對話輸入框附近。
 - 面板關掉後，輸入 `/skill-dashboard` 重新打開；它也會用文字列出每個 skill 目前的狀態。
 - 不想點按鈕，也可以直接打：`/skill-dashboard on humanizer`、`/skill-dashboard off humanizer`、`/skill-dashboard once reviewer`（可用 `humanizer`、`research`、`paper`、`reviewer`、`pipeline`）。
-- 如果使用的 app 不顯示側邊面板，開關會改放在輸入框上方：`━━●`／`○━━` 是常駐開關，`⚡` 是下一則。
 
-面板會出現在 Claude 桌面 app、手機 app 與終端機。VS Code 擴充套件目前還不顯示 mod 面板，但在其他地方打開的常駐開關，在 VS Code 的對話裡一樣會生效。
+面板會出現在終端機與 Claude 桌面 app 的本機 Code 對話。雲端對話（網頁、手機 app 開的 Code 對話）目前不顯示 mod 面板，只能用上面的文字指令；VS Code 擴充套件也還不顯示。
 
 ## 安裝
 

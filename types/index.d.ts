@@ -10,6 +10,8 @@ declare module 'claude-code' {
       hitsThisTurn: string[]
       installed: Record<string, string>
       turn: number
+      expanded: string[]
+      isCollapsed: boolean
     }
   }
 }

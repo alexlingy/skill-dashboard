@@ -8,18 +8,20 @@ const BAND = {
 const run = (args: string) =>
   ({ command: 'skill-dashboard', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } }) as const
 
-test('where no panel is drawn, the controls sit above the prompt and the command reports state', async ($, on) => {
+test('nothing is drawn near the prompt, and the command reports and switches where no panel is drawn', async ($, on) => {
   mock.store(on)
   on('command.list', () => ({ value: [] }))
-  on('ui.panes', () => ({ value: [] }))
   on('ui.open', () => ({ value: { isPlaced: false, reason: 'no-surface' } }))
+  // The engine's own band: what shows when no plugin draws there.
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine band</Text>
+  })
 
   for (const surface of ['terminal', 'desktop', 'mobile'] as const) {
     const ui = await $.ui.mount({ plugin: 'skill-dashboard', surface, ...BAND })
-    expect(await ui.find({ type: 'Text', text: /Academic Humanizer/ })).toBeDefined()
-    await ui.press({ key: 'pin:academic-humanizer' })
-    expect(await ui.find({ type: 'Text', text: '━━●' })).toBeDefined()
-    await ui.press({ key: 'pin:academic-humanizer' })
+    expect(await ui.find({ type: 'Text', text: /Academic Humanizer/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: 'engine band' })).toBeDefined()
     await ui.unmount()
   }
 

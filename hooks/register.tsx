@@ -7,11 +7,11 @@ const PANE = 'skill-dashboard'
 const COMMAND = 'skill-dashboard'
 
 const SKILLS = [
-  { id: 'academic-humanizer', label: 'Academic Humanizer', scope: 'editing AI-assisted academic prose or grant proposals for clarity and voice' },
-  { id: 'deep-research', label: 'Deep Research', scope: 'investigating a research question, literature review, fact-checking' },
-  { id: 'academic-paper', label: 'Academic Paper', scope: 'planning, drafting or revising an academic paper' },
-  { id: 'academic-paper-reviewer', label: 'Paper Reviewer', scope: 'peer-reviewing an academic paper' },
-  { id: 'academic-pipeline', label: 'Academic Pipeline', scope: 'running the full research-to-publication pipeline' },
+  { id: 'academic-humanizer', label: 'Academic Humanizer', about: '學術文字潤飾，保留作者語氣', scope: 'editing AI-assisted academic prose or grant proposals for clarity and voice' },
+  { id: 'deep-research', label: 'Deep Research', about: '研究問題、文獻回顧、事實查核', scope: 'investigating a research question, literature review, fact-checking' },
+  { id: 'academic-paper', label: 'Academic Paper', about: '論文規劃、撰寫、修訂', scope: 'planning, drafting or revising an academic paper' },
+  { id: 'academic-paper-reviewer', label: 'Paper Reviewer', about: '多角度論文審查', scope: 'peer-reviewing an academic paper' },
+  { id: 'academic-pipeline', label: 'Academic Pipeline', about: '研究到投稿的完整流程', scope: 'running the full research-to-publication pipeline' },
 ] as const
 
 const pinned = atom({ plugin: 'skill-dashboard', key: 'pinned' } as const, [])
@@ -21,6 +21,17 @@ const hits = atom({ plugin: 'skill-dashboard', key: 'hits' } as const, {})
 const hitsThisTurn = atom({ plugin: 'skill-dashboard', key: 'hitsThisTurn' } as const, [])
 const installed = atom({ plugin: 'skill-dashboard', key: 'installed' } as const, {})
 const turn = atom({ plugin: 'skill-dashboard', key: 'turn' } as const, 0)
+const expanded = atom({ plugin: 'skill-dashboard', key: 'expanded' } as const, [])
+const isCollapsed = atom({ plugin: 'skill-dashboard', key: 'isCollapsed' } as const, false)
+
+/** Claude's own theme keys, so the panel follows the person's light or dark theme. */
+const ACCENT = 'claude'
+const MUTED = 'subtle'
+const KNOB = '#FFFFFF'
+
+/** The slide switch's track: the knob sits right when on, left when off. */
+const TRACK_ON = '    ● '
+const TRACK_OFF = ' ●    '
 
 const ALIASES: Record<string, string> = {
   humanizer: 'academic-humanizer',
@@ -60,6 +71,16 @@ async function togglePinned($: EngineInterface, id: string) {
 
 async function toggleArmed($: EngineInterface, id: string) {
   await update($, armed, list => toggled(list, id))
+}
+
+async function toggleCollapsed($: EngineInterface) {
+  const next = !(await read($, isCollapsed))
+  await update($, isCollapsed, () => next)
+  await $.store.set('isCollapsed', next)
+}
+
+async function toggleExpanded($: EngineInterface, id: string) {
+  await update($, expanded, list => toggled(list, id))
 }
 
 async function refreshInstalled($: EngineInterface) {
@@ -123,6 +144,8 @@ export const register: Register = on => {
     const stored = await $.store.get('pinned')
     const ids = Array.isArray(stored) ? stored.filter((one): one is string => typeof one === 'string' && idOf(one) === one) : []
     await update($, pinned, () => ids)
+    const wasCollapsed = (await $.store.get('isCollapsed')) === true
+    await update($, isCollapsed, () => wasCollapsed)
     void $.ui.open({ id: PANE, title: 'Skills 儀表板' })
     await refreshInstalled($)
     // `/skills` is a built-in command, so the dashboard's own is named after the plugin.
@@ -155,7 +178,7 @@ export const register: Register = on => {
     const opened = await $.ui.open({ id: PANE, title: 'Skills 儀表板' })
     const note = opened.isPlaced
       ? '側邊面板已打開。'
-      : `這個 app 目前沒有顯示側邊面板（${opened.reason}），開關改放在輸入框上方。`
+      : `這個 app 目前沒有顯示側邊面板（${opened.reason}），請用下面的文字指令控制。`
 
     return { text: [note, await statusText($), USAGE].join('\n\n') }
   })
@@ -200,36 +223,6 @@ export const register: Register = on => {
     return { sections: [...composed.sections, { id: 'skill-dashboard:active', text, scope: 'session' }] }
   })
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const panes = await $.ui.panes()
-    const isPaneDrawn = panes.some(one => one.id === PANE && one.isPlaced && one.isShown)
-    if (e.props.hasSurvey || isPaneDrawn) {
-      return next(e)
-    }
-
-    const { Box, Button, Text } = $.ui.resolve(e)
-    const always = await read($, pinned)
-    const once = await read($, armed)
-    const thisTurn = await read($, hitsThisTurn)
-
-    return (
-      <Box flexDirection="column">
-        {SKILLS.map(skill => (
-          <Box key={skill.id}>
-            <Button key={`pin:${skill.id}`} onPress={() => togglePinned($, skill.id)}>
-              {always.includes(skill.id) ? <Text color="green">━━●</Text> : <Text dimColor>○━━</Text>}
-            </Button>
-            <Text> </Text>
-            <Button key={`once:${skill.id}`} onPress={() => toggleArmed($, skill.id)}>
-              {once.includes(skill.id) ? <Text color="yellow">⚡</Text> : <Text dimColor>⚡</Text>}
-            </Button>
-            <Text> {skill.label}{thisTurn.includes(skill.id) ? ' ✓ 本回合已觸發' : ''}</Text>
-          </Box>
-        ))}
-      </Box>
-    )
-  })
-
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const always = await read($, pinned)
@@ -237,38 +230,75 @@ export const register: Register = on => {
     const counts = await read($, hits)
     const thisTurn = await read($, hitsThisTurn)
     const names = await read($, installed)
+    const open = await read($, expanded)
+    const collapsed = await read($, isCollapsed)
+
+    const summary = [
+      always.length > 0 ? `${always.length} 常駐` : null,
+      once.length > 0 ? `⚡ ${once.length}` : null,
+      thisTurn.length > 0 ? `✓ ${thisTurn.length}` : null,
+    ].filter(Boolean).join(' · ')
+
+    const header = (
+      <Button key="panel" onPress={() => toggleCollapsed($)}>
+        <Text color={ACCENT} bold>{collapsed ? '▸' : '▾'} Skills</Text>
+        <Text color={MUTED}>{summary ? `  ${summary}` : ''}</Text>
+      </Button>
+    )
+
+    if (collapsed) {
+      return <Box flexDirection="column">{header}</Box>
+    }
 
     return (
       <Box flexDirection="column">
+        {header}
         {SKILLS.map(skill => {
           const isOn = always.includes(skill.id)
           const isArmed = once.includes(skill.id)
+          const isOpen = open.includes(skill.id)
+          const isMissing = !names[skill.id]
           const hit = counts[skill.id]
 
           return (
-            <Box key={skill.id} flexDirection="column" marginBottom={1}>
-              <Text>
-                <Text bold>{skill.label}</Text>
-                {names[skill.id] ? '' : <Text dimColor> (未安裝)</Text>}
-              </Text>
-              <Box>
-                <Button key={`pin:${skill.id}`} onPress={() => togglePinned($, skill.id)}>
-                  {isOn ? <Text color="green">━━● 常駐 ON</Text> : <Text dimColor>○━━ 常駐 OFF</Text>}
+            <Box key={skill.id} flexDirection="column" marginTop={1}>
+              <Box justifyContent="space-between">
+                <Button key={`expand:${skill.id}`} plain onPress={() => toggleExpanded($, skill.id)}>
+                  <Text color={MUTED}>{isOpen ? '▾ ' : '▸ '}</Text>
+                  <Text bold={isOn} color={isMissing ? MUTED : undefined}>{skill.label}</Text>
+                  <Text color={ACCENT}>{thisTurn.includes(skill.id) ? '  ✓' : ''}</Text>
                 </Button>
-                <Text> </Text>
-                <Button key={`once:${skill.id}`} onPress={() => toggleArmed($, skill.id)}>
-                  {isArmed ? <Text color="yellow">⚡ 下一則：待命</Text> : <Text dimColor>⚡ 下一則</Text>}
-                </Button>
+                <Box>
+                  <Button key={`once:${skill.id}`} plain onPress={() => toggleArmed($, skill.id)}>
+                    {isArmed ? <Text color={ACCENT} bold>⚡</Text> : <Text color={MUTED}>⚡</Text>}
+                  </Button>
+                  <Text> </Text>
+                  <Button key={`pin:${skill.id}`} plain onPress={() => togglePinned($, skill.id)}>
+                    {isOn ? (
+                      <Text backgroundColor={ACCENT} color={KNOB} bold>{TRACK_ON}</Text>
+                    ) : (
+                      <Text backgroundColor={MUTED} color={KNOB}>{TRACK_OFF}</Text>
+                    )}
+                  </Button>
+                </Box>
               </Box>
-              <Text key={`hit:${skill.id}`} dimColor>
-                {hit ? `已觸發 ${hit.count} 次 · 最近：第 ${hit.lastTurn} 則訊息` : '本次對話尚未觸發'}
-              </Text>
+              {isOpen && (
+                <Box flexDirection="column" paddingLeft={2}>
+                  <Text color={MUTED}>{skill.about}</Text>
+                  <Text color={MUTED}>{isOn ? '常駐：開' : '常駐：關'} · {isArmed ? '⚡ 下一則：待命' : '⚡ 下一則：未啟用'}</Text>
+                  <Text color={MUTED}>
+                    {hit ? `已觸發 ${hit.count} 次 · 最近：第 ${hit.lastTurn} 則訊息` : '本次對話尚未觸發'}
+                  </Text>
+                  {isMissing && <Text color={MUTED}>未安裝在這台機器上</Text>}
+                </Box>
+              )}
             </Box>
           )
         })}
-        <Text key="this-turn">
-          本回合觸發：{thisTurn.length > 0 ? thisTurn.join('、') : '無'}
-        </Text>
+        <Box marginTop={1}>
+          <Text color={MUTED}>本回合觸發：</Text>
+          <Text color={thisTurn.length > 0 ? ACCENT : MUTED}>{thisTurn.length > 0 ? thisTurn.join('、') : '無'}</Text>
+        </Box>
       </Box>
     )
   })
