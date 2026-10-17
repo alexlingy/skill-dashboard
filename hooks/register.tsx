@@ -47,11 +47,36 @@ const ACCENT = 'claude'
 const MUTED = 'subtle'
 const TRACK_OFF = 'inactive'
 
-/** What a desktop or phone draws, where a Button keeps no Text styles but draws its label's emoji in color. */
-const LAMP_ON = '🟠'
-const LAMP_OFF = '⚪'
-const BOX_ON = '✅'
-const BOX_OFF = '⬜'
+/**
+ * The emoji a desktop or phone draws, where a Button keeps no Text styles but draws its label's emoji in
+ * color: the manifest's `userConfig` fields, which `/config` and `/skill-dashboard emoji` change.
+ */
+const LOOK = { lampOn: '🟠', lampOff: '⚪', boxOn: '✅', boxOff: '⬜' }
+type Look = typeof LOOK
+
+const lookOf = (options: Readonly<Record<string, unknown>>): Look => {
+  const pick = (field: keyof Look) => {
+    const value = options[field]
+    return typeof value === 'string' && value.trim() !== '' ? value.trim() : LOOK[field]
+  }
+  return { lampOn: pick('lampOn'), lampOff: pick('lampOff'), boxOn: pick('boxOn'), boxOff: pick('boxOff') }
+}
+
+/** Sets the emoji fields through `/config`, which reloads the module with them. */
+async function setLook($: EngineInterface, values: Partial<Look>): Promise<string | null> {
+  const rows = await $.config.list().catch(() => [])
+  for (const [field, value] of Object.entries(values)) {
+    const row = rows.find(one => one.provider.plugin === 'skill-dashboard' && one.key.endsWith(`.${field}`))
+    const result = await $.config
+      .set({ key: row?.key ?? `skill-dashboard.${field}`, value: value ?? '' })
+      .catch((error: unknown) => ({ deny: String(error) }))
+    if (result.deny !== undefined) {
+      return result.deny
+    }
+  }
+
+  return null
+}
 
 const bareOf = (name: string) => name.split(':').pop() ?? name
 const ownerOf = (name: string) => (name.includes(':') ? name.slice(0, name.lastIndexOf(':')) : undefined)
@@ -212,9 +237,39 @@ async function statusText($: EngineInterface): Promise<string> {
 const USAGE = [
   '用法：/skill-dashboard [on|off|add|remove] <skill 名稱>',
   'on/off：強制載入開關 · add/remove：加入或移出常用（內建的 skill 也可以加）',
+  'emoji：看或改 Desktop 與手機上的 emoji',
 ].join('\n')
 
-export const register: Register = on => {
+const EMOJI_USAGE = [
+  '/skill-dashboard emoji lamp <已觸發> <沒觸發>   例：/skill-dashboard emoji lamp 🟢 ⚫',
+  '/skill-dashboard emoji box <強制> <自動>        例：/skill-dashboard emoji box ☑️ ⬜',
+  '/skill-dashboard emoji reset                    換回預設',
+].join('\n')
+
+/** `/skill-dashboard emoji ...`: shows the emoji, or sets a pair of them. */
+async function emojiCommand($: EngineInterface, look: Look, words: readonly string[]): Promise<string> {
+  const [part = '', on = '', off = ''] = words
+  const current = `目前：燈號 ${look.lampOn} 已觸發 · ${look.lampOff} 沒觸發；開關 ${look.boxOn} 強制 · ${look.boxOff} 自動`
+  const values: Partial<Look> | null =
+    part === 'reset' ? { ...LOOK }
+    : part === 'lamp' && on && off ? { lampOn: on, lampOff: off }
+    : part === 'box' && on && off ? { boxOn: on, boxOff: off }
+    : null
+  if (values === null) {
+    return [current, EMOJI_USAGE].join('\n\n')
+  }
+  const denied = await setLook($, values)
+  if (denied !== null) {
+    return `沒有改成：${denied}\n也可以在 /config 裡改「燈號」「開關」這四項。`
+  }
+  const next = { ...look, ...values }
+
+  return `已更新，面板重新載入後生效：燈號 ${next.lampOn} 已觸發 · ${next.lampOff} 沒觸發；開關 ${next.boxOn} 強制 · ${next.boxOff} 自動`
+}
+
+export const register: Register = (on, options) => {
+  const look = lookOf(options)
+
   on('session.start', async ($, e, next) => {
     const wasCollapsed = (await $.store.get('isCollapsed')) === true
     await update($, isCollapsed, () => wasCollapsed)
@@ -244,6 +299,9 @@ export const register: Register = on => {
     await refresh($)
     const [verb = '', ...rest] = e.args.trim().split(/\s+/)
     const word = rest.join(' ')
+    if (verb.toLowerCase() === 'emoji') {
+      return { text: await emojiCommand($, look, rest) }
+    }
     if (verb !== '') {
       const action = verb.toLowerCase()
       const list = await read($, catalog)
@@ -321,7 +379,7 @@ export const register: Register = on => {
     const isTerminal = e.surface === 'terminal'
     const lamp = (name: string) =>
       !isTerminal ? (
-        <Text>{done[name] !== undefined ? LAMP_ON : LAMP_OFF}</Text>
+        <Text>{done[name] !== undefined ? look.lampOn : look.lampOff}</Text>
       ) : done[name] === now ? (
         <Text color={ACCENT} bold>●</Text>
       ) : done[name] !== undefined ? (
@@ -334,7 +392,7 @@ export const register: Register = on => {
     // draws a Button as its native button, which keeps none of a Text's styles, so there it is a checkbox emoji.
     const slider = (isOn: boolean) =>
       !isTerminal ? (
-        isOn ? BOX_ON : BOX_OFF
+        isOn ? look.boxOn : look.boxOff
       ) : isOn ? (
         <Text color={ACCENT} inverse>{'   ●'}</Text>
       ) : (

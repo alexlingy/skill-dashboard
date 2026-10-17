@@ -209,3 +209,37 @@ test('the panel folds to one summary line and back', async ($, on) => {
     await ui.unmount()
   }
 })
+
+test('the emoji on a desktop are the person\'s own, and /skill-dashboard emoji changes them', { options: { lampOn: '🟢', boxOff: '🔲' } }, async ($, on) => {
+  mock.store(on)
+  const sets: { key: string; value: unknown }[] = []
+  on('command.list', () => ({ value: COMMANDS }))
+  on('config.list', () => ({ value: [] }))
+  on('config.set', (_, e) => {
+    sets.push({ key: e.key, value: e.value })
+    return { value: e.value }
+  })
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  on('skill.prompt', (_, e) => ({ text: e.text }))
+  await $.prompt.submit({ text: 'hello', ...SUBMIT })
+  await $.skill.prompt({ skill: 'academic-humanizer', text: 'x', frontmatter: {}, source: 'user' })
+
+  // The set ones are drawn; the rest keep their defaults.
+  const ui = await $.ui.mount({ plugin: 'skill-dashboard', surface: 'desktop', ...PANE })
+  expect(await ui.find({ type: 'Text', text: '🟢' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '⚪' })).toBeDefined()
+  expect((await ui.find({ key: 'pin:academic-humanizer' }))?.text).toBe('🔲')
+  await ui.press({ key: 'pin:academic-humanizer' })
+  expect((await ui.find({ key: 'pin:academic-humanizer' }))?.text).toBe('✅')
+  await ui.unmount()
+
+  const run = (args: string) =>
+    $.command.run({ command: 'skill-dashboard', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+  expect((await run('emoji')).text).toContain('🟢')
+  await run('emoji lamp 🔵 ⚫')
+  expect(sets).toEqual([
+    { key: 'skill-dashboard.lampOn', value: '🔵' },
+    { key: 'skill-dashboard.lampOff', value: '⚫' },
+  ])
+  expect((await run('emoji lamp 🔵')).text).toContain('/skill-dashboard emoji lamp')
+})

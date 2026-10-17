@@ -1,7 +1,33 @@
 {
   "name": "skill-dashboard",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Side-panel dashboard for every installed skill: a lamp that shows whether each one was loaded, a slide switch that makes a skill load in every conversation, favorites, search, and a Remote Control toggle",
   "author": { "name": "alexlingy" },
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "lampOn": {
+      "type": "string",
+      "title": "燈號：已觸發",
+      "description": "Claude Desktop 與手機上，這次對話已載入的 skill 前面的 emoji",
+      "default": "🟠"
+    },
+    "lampOff": {
+      "type": "string",
+      "title": "燈號：沒觸發",
+      "description": "Claude Desktop 與手機上，還沒載入的 skill 前面的 emoji",
+      "default": "⚪"
+    },
+    "boxOn": {
+      "type": "string",
+      "title": "開關：強制",
+      "description": "Claude Desktop 與手機上，強制載入的 skill 右邊的 emoji",
+      "default": "✅"
+    },
+    "boxOff": {
+      "type": "string",
+      "title": "開關：自動",
+      "description": "Claude Desktop 與手機上，不強制的 skill 右邊的 emoji",
+      "default": "⬜"
+    }
+  }
 }

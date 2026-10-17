@@ -28,7 +28,7 @@ Enable Remote Control for all sessions  [●   ]
 
 - **燈號（左）**：亮橘＝本回合有載入；淡橘＝這次對話稍早載入過（規則還在對話裡）；空心 ○＝還沒載入。
 - **滑動開關（右）**：開了之後，每個對話的第一則訊息，面板都會明確要求 Claude 回答前先載入這個 skill；對話中途打開，下一則就載入。直到燈號亮起，這個要求才會拿掉。載入之後規則會留在對話裡，相關的地方就套用。設定會記住。沒開的 skill，Claude 還是會照它自己的判斷載入，燈號會告訴你有沒有。
-- **在 Claude Desktop 與手機上**：燈號是 🟠（這次對話已觸發）或 ⚪（沒觸發）；開關是 ✅（強制）或 ⬜（自動），直接點就切換。Remote Control 也一樣。
+- **在 Claude Desktop 與手機上**：燈號是 🟠（這次對話已觸發）或 ⚪（沒觸發）；開關是 ✅（強制）或 ⬜（自動），直接點就切換。Remote Control 也一樣。這四個 emoji 都可以換，見下面的 `emoji` 指令，或在 `/config` 裡改。
 - **作用中**：列出開著或這次對話載入過的 skill。
 - **★ 常用**：放在最上面。點 skill 名稱展開說明，可以加入或移出常用。預設是 Academic Humanizer 和 ARS 的四個 skill。
 - **分組**：其他 skill 依 plugin 分組，可以收合；收合時顯示數量和開了幾個。
@@ -46,6 +46,10 @@ Enable Remote Control for all sessions  [●   ]
 /skill-dashboard off academic-research-skills:deep-research
 /skill-dashboard add init              加入常用（內建的 skill 也可以）
 /skill-dashboard remove init           移出常用
+/skill-dashboard emoji                 看目前的 emoji
+/skill-dashboard emoji lamp 🟢 ⚫       換燈號（已觸發、沒觸發）
+/skill-dashboard emoji box ☑️ ⬜        換開關（強制、自動）
+/skill-dashboard emoji reset           換回預設
 ```
 
 舊的簡稱 `humanizer`、`research`、`paper`、`reviewer`、`pipeline` 仍然可用。0.2 版存下來的開關設定會自動沿用。
