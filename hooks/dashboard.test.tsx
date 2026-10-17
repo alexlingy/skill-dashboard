@@ -64,10 +64,12 @@ test('lists every skill by group, favorites first, and the switch makes a skill 
 
     // The switch draws its track, and the active box says the skill is switched on.
     await ui.press({ key: 'pin:academic-humanizer' })
-    expect((await ui.find({ key: 'pin:academic-humanizer' }))?.text).toBe('   ●')
+    // Off the terminal the gaps are non-breaking spaces, so a native button keeps the knob where it is.
+    const gap = surface === 'terminal' ? '   ' : '   '
+    expect((await ui.find({ key: 'pin:academic-humanizer' }))?.text).toBe(`${gap}●`)
     expect((await ui.find({ key: 'active:academic-humanizer' }))?.text).toContain('強制')
     await ui.press({ key: 'pin:academic-humanizer' })
-    expect((await ui.find({ key: 'pin:academic-humanizer' }))?.text).toBe('●   ')
+    expect((await ui.find({ key: 'pin:academic-humanizer' }))?.text).toBe(`●${gap}`)
     expect(await ui.find({ key: 'active:academic-humanizer' })).toBeUndefined()
     await ui.unmount()
   }

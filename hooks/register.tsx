@@ -321,9 +321,17 @@ export const register: Register = on => {
         <Text color={MUTED}>○</Text>
       )
 
-    // The track is drawn with inverse, so it shows on every terminal; the knob sits right when on.
+    // The knob sits right when on. The terminal draws the track with inverse, so it shows on every terminal;
+    // the desktop's native button collapses plain spaces and draws no inverse, so there the track is a
+    // background behind non-breaking spaces.
+    const isTerminal = e.surface === 'terminal'
+    const gap = isTerminal ? '   ' : '   '
     const slider = (isOn: boolean) =>
-      isOn ? <Text color={ACCENT} inverse>{'   ●'}</Text> : <Text color={TRACK_OFF} inverse>{'●   '}</Text>
+      isTerminal ? (
+        <Text color={isOn ? ACCENT : TRACK_OFF} inverse>{isOn ? `${gap}●` : `●${gap}`}</Text>
+      ) : (
+        <Text color="inverseText" backgroundColor={isOn ? ACCENT : TRACK_OFF}>{isOn ? `${gap}●` : `●${gap}`}</Text>
+      )
 
     const loadedCount = Object.keys(done).length
     const summary = [pins.length > 0 ? `${pins.length} 強制` : null, loadedCount > 0 ? `${loadedCount} 已載入` : null]
