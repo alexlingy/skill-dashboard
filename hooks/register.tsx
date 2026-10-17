@@ -47,11 +47,11 @@ const ACCENT = 'claude'
 const MUTED = 'subtle'
 const TRACK_OFF = 'inactive'
 
-/** The pill a desktop or phone draws for a switch, as its own switches look; an Svg is an image, so its colors are fixed. */
-const pillSvg = (track: string, knobX: number) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 34 20"><rect width="34" height="20" rx="10" fill="${track}"/><circle cx="${knobX}" cy="10" r="7.5" fill="#fff"/></svg>`
-const PILL_ON = pillSvg('#D97757', 24)
-const PILL_OFF = pillSvg('#A3A19B', 10)
+/** What a desktop or phone draws, where a Button keeps no Text styles but draws its label's emoji in color. */
+const LAMP_ON = '🟠'
+const LAMP_OFF = '⚪'
+const BOX_ON = '✅'
+const BOX_OFF = '⬜'
 
 const bareOf = (name: string) => name.split(':').pop() ?? name
 const ownerOf = (name: string) => (name.includes(':') ? name.slice(0, name.lastIndexOf(':')) : undefined)
@@ -318,8 +318,11 @@ export const register: Register = on => {
     const matches = (name: string) =>
       typed === '' || `${name} ${labelOf(name)} ${aboutOf(skillOf(name), name)}`.toLowerCase().includes(typed)
 
+    const isTerminal = e.surface === 'terminal'
     const lamp = (name: string) =>
-      done[name] === now ? (
+      !isTerminal ? (
+        <Text>{done[name] !== undefined ? LAMP_ON : LAMP_OFF}</Text>
+      ) : done[name] === now ? (
         <Text color={ACCENT} bold>●</Text>
       ) : done[name] !== undefined ? (
         <Text color={ACCENT} dimColor>●</Text>
@@ -328,14 +331,15 @@ export const register: Register = on => {
       )
 
     // The terminal draws the switch as an inverse track whose knob sits right when on. A desktop or phone
-    // draws a Button as its native button, which keeps none of a Text's styles, so there the switch is a
-    // pill drawn as an Svg beside the control, and the press goes on a Button of its own.
-    const isTerminal = e.surface === 'terminal'
-    const Svg = 'Svg' in elements ? elements.Svg : undefined
+    // draws a Button as its native button, which keeps none of a Text's styles, so there it is a checkbox emoji.
     const slider = (isOn: boolean) =>
-      isOn ? <Text color={ACCENT} inverse>{'   ●'}</Text> : <Text color={TRACK_OFF} inverse>{'●   '}</Text>
-    const pill = (isOn: boolean) =>
-      Svg && <Svg source={isOn ? PILL_ON : PILL_OFF} alt={isOn ? '開' : '關'} width={34} height={20} />
+      !isTerminal ? (
+        isOn ? BOX_ON : BOX_OFF
+      ) : isOn ? (
+        <Text color={ACCENT} inverse>{'   ●'}</Text>
+      ) : (
+        <Text color={TRACK_OFF} inverse>{'●   '}</Text>
+      )
 
     const loadedCount = Object.keys(done).length
     const summary = [pins.length > 0 ? `${pins.length} 強制` : null, loadedCount > 0 ? `${loadedCount} 已載入` : null]
@@ -367,27 +371,16 @@ export const register: Register = on => {
                 <Text color={isGone ? MUTED : undefined} strikethrough={isGone} wrap="truncate-end">{labelOf(name)}</Text>
               </Button>
             </Box>
-            {isTerminal ? (
-              <Button key={`pin:${name}`} plain onPress={() => setPinned($, name, !isOn)}>
-                {slider(isOn)}
-              </Button>
-            ) : (
-              pill(isOn)
-            )}
+            <Button key={`pin:${name}`} plain onPress={() => setPinned($, name, !isOn)}>
+              {slider(isOn)}
+            </Button>
           </Box>
           {details.includes(name) && (
             <Box flexDirection="column" paddingLeft={2}>
               <Text color={MUTED} wrap="wrap">{isGone ? '已移除：這台機器上找不到這個 skill' : aboutOf(skill, name)}</Text>
-              <Box>
-                {!isTerminal && (
-                  <Button key={`pin:${name}`} variant={isOn ? 'secondary' : 'primary'} onPress={() => setPinned($, name, !isOn)}>
-                    {isOn ? '改為自動' : '改為強制'}
-                  </Button>
-                )}
-                <Button key={`fav:${name}`} plain onPress={() => setFavorite($, name, !favs.includes(name))}>
-                  <Text color={MUTED}>{favs.includes(name) ? '★ 移出常用' : '☆ 加入常用'}</Text>
-                </Button>
-              </Box>
+              <Button key={`fav:${name}`} plain onPress={() => setFavorite($, name, !favs.includes(name))}>
+                <Text color={MUTED}>{favs.includes(name) ? '★ 移出常用' : '☆ 加入常用'}</Text>
+              </Button>
             </Box>
           )}
         </Box>
@@ -452,18 +445,10 @@ export const register: Register = on => {
         {groupNames.map(name => group(name, name, listed.filter(one => one.group === name).map(one => one.name)))}
         {toggle && (
           <Box marginTop={1} justifyContent="space-between">
-            {isTerminal ? <Text bold>{toggle.label}</Text> : (
-              <Button key="remote" plain onPress={() => flipRemote($)}>
-                {toggle.label}
-              </Button>
-            )}
-            {isTerminal ? (
-              <Button key="remote" plain onPress={() => flipRemote($)}>
-                {slider(toggle.value)}
-              </Button>
-            ) : (
-              pill(toggle.value)
-            )}
+            <Text bold>{toggle.label}</Text>
+            <Button key="remote" plain onPress={() => flipRemote($)}>
+              {slider(toggle.value)}
+            </Button>
           </Box>
         )}
       </Box>
