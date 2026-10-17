@@ -1,38 +1,25 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Hit } from '../types'
+import type { Skill, Toggle } from '../types'
 
 const PANE = 'skill-dashboard'
 const COMMAND = 'skill-dashboard'
+const TITLE = 'Skills 儀表板'
 
-const SKILLS = [
-  { id: 'academic-humanizer', label: 'Academic Humanizer', about: '學術文字潤飾，保留作者語氣', scope: 'editing AI-assisted academic prose or grant proposals for clarity and voice' },
-  { id: 'deep-research', label: 'Deep Research', about: '研究問題、文獻回顧、事實查核', scope: 'investigating a research question, literature review, fact-checking' },
-  { id: 'academic-paper', label: 'Academic Paper', about: '論文規劃、撰寫、修訂', scope: 'planning, drafting or revising an academic paper' },
-  { id: 'academic-paper-reviewer', label: 'Paper Reviewer', about: '多角度論文審查', scope: 'peer-reviewing an academic paper' },
-  { id: 'academic-pipeline', label: 'Academic Pipeline', about: '研究到投稿的完整流程', scope: 'running the full research-to-publication pipeline' },
-] as const
+/** The five skills the dashboard started with: their own labels and Chinese notes, and the default favorites. */
+const KNOWN: Record<string, { label: string; about: string }> = {
+  'academic-humanizer': { label: 'Academic Humanizer', about: '學術文字潤飾，保留作者語氣' },
+  'deep-research': { label: 'Deep Research', about: '研究問題、文獻回顧、事實查核' },
+  'academic-paper': { label: 'Academic Paper', about: '論文規劃、撰寫、修訂' },
+  'academic-paper-reviewer': { label: 'Paper Reviewer', about: '多角度論文審查' },
+  'academic-pipeline': { label: 'Academic Pipeline', about: '研究到投稿的完整流程' },
+}
 
-const pinned = atom({ plugin: 'skill-dashboard', key: 'pinned' } as const, [])
-const armed = atom({ plugin: 'skill-dashboard', key: 'armed' } as const, [])
-const forcedThisTurn = atom({ plugin: 'skill-dashboard', key: 'forcedThisTurn' } as const, [])
-const hits = atom({ plugin: 'skill-dashboard', key: 'hits' } as const, {})
-const hitsThisTurn = atom({ plugin: 'skill-dashboard', key: 'hitsThisTurn' } as const, [])
-const installed = atom({ plugin: 'skill-dashboard', key: 'installed' } as const, {})
-const turn = atom({ plugin: 'skill-dashboard', key: 'turn' } as const, 0)
-const expanded = atom({ plugin: 'skill-dashboard', key: 'expanded' } as const, [])
-const isCollapsed = atom({ plugin: 'skill-dashboard', key: 'isCollapsed' } as const, false)
+/** Plugins whose skills the KNOWN notes describe; another plugin's skill of the same name (`anthropic-skills:deep-research`) is not one of them. */
+const OWNERS = ['academic-research-skills', 'academic-humanizer']
 
-/** Claude's own theme keys, so the panel follows the person's light or dark theme. */
-const ACCENT = 'claude'
-const MUTED = 'subtle'
-const KNOB = '#FFFFFF'
-
-/** The slide switch's track: the knob sits right when on, left when off. */
-const TRACK_ON = '    ● '
-const TRACK_OFF = ' ●    '
-
+/** Short words the typed command still takes for the five. */
 const ALIASES: Record<string, string> = {
   humanizer: 'academic-humanizer',
   research: 'deep-research',
@@ -41,36 +28,121 @@ const ALIASES: Record<string, string> = {
   pipeline: 'academic-pipeline',
 }
 
-/** Plugins whose skills these are; another plugin's skill of the same name (`anthropic-skills:deep-research`) is not. */
-const OWNERS = ['academic-research-skills', 'academic-humanizer']
+const MINE = '我的 skills'
+const FAVORITES = 'favorites'
 
-/** The dashboard id a skill or command name stands for: bare `name`, or `owner:name` from one of OWNERS. */
-function idOf(name: string): string | undefined {
-  const parts = name.split(':')
-  const bare = parts.pop() ?? name
-  if (parts.length > 0 && !OWNERS.includes(parts.join(':'))) {
-    return undefined
+const catalog = atom({ plugin: 'skill-dashboard', key: 'catalog' } as const, [])
+const pinned = atom({ plugin: 'skill-dashboard', key: 'pinned' } as const, [])
+const favorites = atom({ plugin: 'skill-dashboard', key: 'favorites' } as const, [])
+const loaded = atom({ plugin: 'skill-dashboard', key: 'loaded' } as const, {})
+const turn = atom({ plugin: 'skill-dashboard', key: 'turn' } as const, 0)
+const openGroups = atom({ plugin: 'skill-dashboard', key: 'openGroups' } as const, ['favorites'])
+const expanded = atom({ plugin: 'skill-dashboard', key: 'expanded' } as const, [])
+const query = atom({ plugin: 'skill-dashboard', key: 'query' } as const, '')
+const isCollapsed = atom({ plugin: 'skill-dashboard', key: 'isCollapsed' } as const, false)
+const remote = atom({ plugin: 'skill-dashboard', key: 'remote' } as const, null)
+
+/** Claude's own theme keys, so the panel follows the person's theme: one accent for "on", greys for the rest. */
+const ACCENT = 'claude'
+const MUTED = 'subtle'
+const TRACK_OFF = 'inactive'
+
+const bareOf = (name: string) => name.split(':').pop() ?? name
+const ownerOf = (name: string) => (name.includes(':') ? name.slice(0, name.lastIndexOf(':')) : undefined)
+
+/** The KNOWN entry a name stands for: bare, or `owner:name` from one of OWNERS. */
+function knownOf(name: string) {
+  const owner = ownerOf(name)
+  return owner === undefined || OWNERS.includes(owner) ? KNOWN[bareOf(name)] : undefined
+}
+
+const labelOf = (name: string) => knownOf(name)?.label ?? bareOf(name)
+
+function aboutOf(skill: Skill | undefined, name: string) {
+  return knownOf(name)?.about ?? skill?.description ?? ''
+}
+
+function toggled(list: readonly string[], one: string): string[] {
+  return list.includes(one) ? list.filter(item => item !== one) : [...list, one]
+}
+
+/**
+ * The catalog name a stored or typed name stands for: itself when listed, else the listed
+ * skill of that bare name (one of OWNERS' first, for names the dashboard stored before 0.3).
+ */
+function resolve(list: readonly Skill[], name: string): string | undefined {
+  if (list.some(one => one.name === name)) {
+    return name
   }
-  return SKILLS.find(one => one.id === bare)?.id
+  const bare = ALIASES[name.toLowerCase()] ?? bareOf(name)
+  const same = list.filter(one => bareOf(one.name) === bare)
+  const owned = same.find(one => knownOf(one.name) !== undefined)
+
+  return (owned ?? (same.length === 1 ? same[0] : undefined))?.name
 }
 
-function idOfTyped(word: string): string | undefined {
-  const lower = word.toLowerCase()
-  return ALIASES[lower] ?? idOf(lower)
+/** Stored names brought up to date with the catalog; a name no longer listed is kept, so the panel can say it was removed. */
+const resolveAll = (list: readonly Skill[], names: readonly string[]) => [
+  ...new Set(names.map(name => resolve(list, name) ?? name)),
+]
+
+async function readCatalog($: EngineInterface): Promise<Skill[]> {
+  const found: Skill[] = []
+  for (const command of await $.command.list()) {
+    if (command.name === COMMAND || found.some(one => one.name === command.name)) {
+      continue
+    }
+    const isListed = command.source === 'plugin' || command.source === 'user'
+    const group = command.plugin ?? ownerOf(command.name) ?? (command.source === 'user' ? MINE : command.source)
+    found.push({ name: command.name, description: command.description, group, isListed })
+  }
+
+  return found
 }
 
-function toggled(list: readonly string[], id: string): string[] {
-  return list.includes(id) ? list.filter(one => one !== id) : [...list, id]
+/** Reads the skills installed now and the Remote Control toggle; cheap, so it runs on every message and every open. */
+async function refresh($: EngineInterface) {
+  const list = await readCatalog($).catch(() => null)
+  if (list) {
+    await update($, catalog, () => list)
+    const storedPins = await $.store.get('pinned')
+    const pins = resolveAll(list, Array.isArray(storedPins) ? storedPins.filter((one): one is string => typeof one === 'string') : [])
+    await update($, pinned, () => pins)
+    const storedFavorites = await $.store.get('favorites')
+    const favs = Array.isArray(storedFavorites)
+      ? resolveAll(list, storedFavorites.filter((one): one is string => typeof one === 'string'))
+      : Object.keys(KNOWN).map(id => resolve(list, id) ?? id)
+    await update($, favorites, () => favs)
+  }
+
+  // `/config` keeps Remote Control as a choice of `true`, `false` or `default` (off unless set).
+  const rows = await $.config.list().catch(() => [])
+  const row = rows.find(one => /remote.?control/i.test(`${one.key} ${one.label}`) && (one.kind === 'boolean' || one.options?.includes('true')))
+  const toggle: Toggle | null = row
+    ? { key: row.key, label: row.label, value: row.value === true || row.value === 'true', isChoice: row.kind === 'choice', isLocked: row.isLocked }
+    : null
+  await update($, remote, () => toggle)
 }
 
-async function togglePinned($: EngineInterface, id: string) {
-  const next = toggled(await read($, pinned), id)
+async function setPinned($: EngineInterface, name: string, isOn: boolean) {
+  const list = await read($, pinned)
+  const next = isOn ? [...new Set([...list, name])] : list.filter(one => one !== name)
   await update($, pinned, () => next)
   await $.store.set('pinned', next)
 }
 
-async function toggleArmed($: EngineInterface, id: string) {
-  await update($, armed, list => toggled(list, id))
+async function setFavorite($: EngineInterface, name: string, isOn: boolean) {
+  const list = await read($, favorites)
+  const next = isOn ? [...new Set([...list, name])] : list.filter(one => one !== name)
+  await update($, favorites, () => next)
+  await $.store.set('favorites', next)
+}
+
+async function toggleGroup($: EngineInterface, group: string) {
+  const next = toggled(await read($, openGroups), group)
+  await update($, openGroups, () => next)
+  await $.store.set('openGroups', next)
+  await refresh($)
 }
 
 async function toggleCollapsed($: EngineInterface) {
@@ -79,75 +151,72 @@ async function toggleCollapsed($: EngineInterface) {
   await $.store.set('isCollapsed', next)
 }
 
-async function toggleExpanded($: EngineInterface, id: string) {
-  await update($, expanded, list => toggled(list, id))
-}
-
-async function refreshInstalled($: EngineInterface) {
-  const found: Record<string, string> = {}
-  for (const command of await $.command.list()) {
-    const id = idOf(command.name)
-    if (id && !found[id]) {
-      found[id] = command.name
-    }
+async function flipRemote($: EngineInterface) {
+  const now = await read($, remote)
+  if (!now) {
+    return
   }
-  await update($, installed, () => found)
+  if (now.isLocked) {
+    await $.ui.toast(`${now.label}：由管理設定鎖定，無法在這裡變更`)
+    return
+  }
+  const value = now.isChoice ? String(!now.value) : !now.value
+  const result = await $.config.set({ key: now.key, value }).catch((error: unknown) => ({ deny: String(error) }))
+  if (result.deny !== undefined) {
+    await $.ui.toast(`${now.label}：${result.deny}`)
+  }
+  await refresh($)
 }
 
+/** The system prompt's part: switched-on skills not yet loaded in this conversation are to be loaded before answering. */
 async function sectionText($: EngineInterface): Promise<string | null> {
-  const names = await read($, installed)
-  const nameOf = (id: string) => names[id] ?? `${id} (not installed in this session: say so to the person)`
-  const always = await read($, pinned)
-  const now = await read($, forcedThisTurn)
-  const lines: string[] = []
-
-  if (always.length > 0) {
-    lines.push(
-      'The person has switched these skills ON in the skill dashboard. When a request falls within one of their scopes, load that skill with the Skill tool before answering; once per conversation is enough while its instructions are still in context:',
-      ...always.map(id => `- ${nameOf(id)}: ${SKILLS.find(one => one.id === id)?.scope ?? ''}`),
-    )
-  }
-  if (now.length > 0) {
-    lines.push(
-      'The person pressed the one-shot button for THIS request: invoke the Skill tool with each of these skills before answering, and apply it to this request:',
-      ...now.map(id => `- ${nameOf(id)}`),
-    )
+  const list = await read($, catalog)
+  const done = await read($, loaded)
+  const due = (await read($, pinned)).filter(name => done[name] === undefined && list.some(one => one.name === name))
+  if (due.length === 0) {
+    return null
   }
 
-  return lines.length > 0 ? ['# Skill dashboard', ...lines].join('\n') : null
+  return [
+    '# Skill dashboard',
+    'The person switched these skills ON in the skill dashboard, and they have not been loaded in this conversation yet. Before answering, invoke the Skill tool with each of them; then keep applying them wherever they fit for the rest of the conversation:',
+    ...due.map(name => `- ${name}: ${aboutOf(list.find(one => one.name === name), name)}`),
+  ].join('\n')
 }
 
 async function statusText($: EngineInterface): Promise<string> {
-  const always = await read($, pinned)
-  const once = await read($, armed)
-  const counts = await read($, hits)
-  const names = await read($, installed)
-  const rows = SKILLS.map(skill => {
-    const hit = counts[skill.id]
-    const parts = [
-      always.includes(skill.id) ? '常駐 ON' : '常駐 OFF',
-      once.includes(skill.id) ? '⚡ 下一則待命' : null,
-      hit ? `已觸發 ${hit.count} 次（第 ${hit.lastTurn} 則）` : '未觸發',
-      names[skill.id] ? null : '未安裝',
-    ].filter(Boolean)
-    return `${skill.label}：${parts.join(' · ')}`
-  })
-  const thisTurn = await read($, hitsThisTurn)
+  const list = await read($, catalog)
+  const pins = await read($, pinned)
+  const favs = await read($, favorites)
+  const done = await read($, loaded)
+  const now = await read($, turn)
+  const lineOf = (name: string) => {
+    const isGone = !list.some(one => one.name === name)
+    const state = isGone ? '已移除' : done[name] === now ? '本回合已載入' : done[name] !== undefined ? '已載入' : '未載入'
+    return `${pins.includes(name) ? '■' : '□'} ${labelOf(name)}（${name}）：${pins.includes(name) ? '強制' : '不強制'} · ${state}`
+  }
+  const shown = [...new Set([...favs, ...pins, ...Object.keys(done)])]
 
-  return [...rows, `本回合觸發：${thisTurn.length > 0 ? thisTurn.join('、') : '無'}`].join('\n')
+  return [
+    `共 ${list.filter(one => one.isListed).length} 個 skill。常用、強制或已載入的：`,
+    ...(shown.length > 0 ? shown.map(lineOf) : ['（沒有）']),
+  ].join('\n')
 }
 
-const USAGE = '用法：/skill-dashboard [on|off|once] [humanizer|research|paper|reviewer|pipeline]'
+const USAGE = [
+  '用法：/skill-dashboard [on|off|add|remove] <skill 名稱>',
+  'on/off：強制載入開關 · add/remove：加入或移出常用（內建的 skill 也可以加）',
+].join('\n')
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    const stored = await $.store.get('pinned')
-    const ids = Array.isArray(stored) ? stored.filter((one): one is string => typeof one === 'string' && idOf(one) === one) : []
-    await update($, pinned, () => ids)
     const wasCollapsed = (await $.store.get('isCollapsed')) === true
     await update($, isCollapsed, () => wasCollapsed)
-    void $.ui.open({ id: PANE, title: 'Skills 儀表板' })
-    await refreshInstalled($)
+    const stored = await $.store.get('openGroups')
+    const groups = Array.isArray(stored) ? stored.filter((one): one is string => typeof one === 'string') : [FAVORITES]
+    await update($, openGroups, () => groups)
+    void $.ui.open({ id: PANE, title: TITLE })
+    await refresh($)
     // `/skills` is a built-in command, so the dashboard's own is named after the plugin.
     await $.command
       .register({ name: COMMAND, description: 'Open the skill dashboard panel' })
@@ -156,26 +225,40 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // A /clear starts the conversation over: nothing is loaded in it any more.
+  on('session.end', async ($, e, next) => {
+    if (e.reason === 'clear') {
+      await update($, loaded, () => ({}))
+    }
+
+    return next(e)
+  })
+
   on('command.run', { command: COMMAND }, async ($, e) => {
-    const [verb = '', word = ''] = e.args.trim().split(/\s+/)
+    await refresh($)
+    const [verb = '', ...rest] = e.args.trim().split(/\s+/)
+    const word = rest.join(' ')
     if (verb !== '') {
-      const id = idOfTyped(word)
-      if (!id || !['on', 'off', 'once'].includes(verb.toLowerCase())) {
+      const action = verb.toLowerCase()
+      const list = await read($, catalog)
+      const name = resolve(list, word) ?? (action === 'off' || action === 'remove' ? word : undefined)
+      if (!['on', 'off', 'add', 'remove'].includes(action) || !word) {
         return { text: USAGE }
       }
-      const always = await read($, pinned)
-      const verbLower = verb.toLowerCase()
-      if (verbLower === 'once') {
-        await update($, armed, list => (list.includes(id) ? list : [...list, id]))
-      } else if ((verbLower === 'on') !== always.includes(id)) {
-        await togglePinned($, id)
+      if (!name) {
+        const near = list.filter(one => one.name.toLowerCase().includes(word.toLowerCase())).map(one => one.name)
+        return { text: near.length > 0 ? `「${word}」不只一個，請用完整名稱：${near.join('、')}` : `找不到「${word}」這個 skill。\n${USAGE}` }
+      }
+      if (action === 'on' || action === 'off') {
+        await setPinned($, name, action === 'on')
+      } else {
+        await setFavorite($, name, action === 'add')
       }
 
       return { text: await statusText($) }
     }
 
-    await refreshInstalled($)
-    const opened = await $.ui.open({ id: PANE, title: 'Skills 儀表板' })
+    const opened = await $.ui.open({ id: PANE, title: TITLE })
     const note = opened.isPlaced
       ? '側邊面板已打開。'
       : `這個 app 目前沒有顯示側邊面板（${opened.reason}），請用下面的文字指令控制。`
@@ -184,31 +267,16 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    const once = await read($, armed)
-    await update($, forcedThisTurn, () => once)
-    await update($, armed, () => [])
-    await update($, hitsThisTurn, () => [])
     await update($, turn, n => n + 1)
-
-    return next(e)
-  })
-
-  on('turn.complete', async ($, e, next) => {
-    await update($, forcedThisTurn, () => [])
+    await refresh($)
 
     return next(e)
   })
 
   on('skill.prompt', async ($, e, next) => {
-    const id = idOf(e.skill)
-    if (id) {
-      const at = await read($, turn)
-      await update($, hits, all => {
-        const was: Hit = all[id] ?? { count: 0, lastTurn: 0 }
-        return { ...all, [id]: { count: was.count + 1, lastTurn: at } }
-      })
-      await update($, hitsThisTurn, list => (list.includes(id) ? list : [...list, id]))
-    }
+    const name = e.pluginName && !e.skill.includes(':') ? `${e.pluginName}:${e.skill}` : e.skill
+    const at = await read($, turn)
+    await update($, loaded, all => ({ ...all, [name]: at }))
 
     return next(e)
   })
@@ -224,81 +292,149 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Button, Text } = $.ui.resolve(e)
-    const always = await read($, pinned)
-    const once = await read($, armed)
-    const counts = await read($, hits)
-    const thisTurn = await read($, hitsThisTurn)
-    const names = await read($, installed)
-    const open = await read($, expanded)
+    const elements = $.ui.resolve(e)
+    const { Box, Button, Text } = elements
+    // Mobile has no text field, so the search shows where the surface has one.
+    const Input = 'Input' in elements ? elements.Input : undefined
+    const list = await read($, catalog)
+    const pins = await read($, pinned)
+    const favs = await read($, favorites)
+    const done = await read($, loaded)
+    const now = await read($, turn)
+    const open = await read($, openGroups)
+    const details = await read($, expanded)
+    const rawQuery = await read($, query)
+    const typed = rawQuery.trim().toLowerCase()
     const collapsed = await read($, isCollapsed)
+    const toggle = await read($, remote)
 
-    const summary = [
-      always.length > 0 ? `${always.length} 常駐` : null,
-      once.length > 0 ? `⚡ ${once.length}` : null,
-      thisTurn.length > 0 ? `✓ ${thisTurn.length}` : null,
-    ].filter(Boolean).join(' · ')
+    const skillOf = (name: string) => list.find(one => one.name === name)
+    const matches = (name: string) =>
+      typed === '' || `${name} ${labelOf(name)} ${aboutOf(skillOf(name), name)}`.toLowerCase().includes(typed)
+
+    const lamp = (name: string) =>
+      done[name] === now ? (
+        <Text color={ACCENT} bold>●</Text>
+      ) : done[name] !== undefined ? (
+        <Text color={ACCENT} dimColor>●</Text>
+      ) : (
+        <Text color={MUTED}>○</Text>
+      )
+
+    // The track is drawn with inverse, so it shows on every terminal; the knob sits right when on.
+    const slider = (isOn: boolean) =>
+      isOn ? <Text color={ACCENT} inverse>{'   ●'}</Text> : <Text color={TRACK_OFF} inverse>{'●   '}</Text>
+
+    const loadedCount = Object.keys(done).length
+    const summary = [pins.length > 0 ? `${pins.length} 強制` : null, loadedCount > 0 ? `${loadedCount} 已載入` : null]
+      .filter(Boolean)
+      .join(' · ')
 
     const header = (
-      <Button key="panel" onPress={() => toggleCollapsed($)}>
+      <Button key="panel" plain onPress={() => toggleCollapsed($)}>
         <Text color={ACCENT} bold>{collapsed ? '▸' : '▾'} Skills</Text>
-        <Text color={MUTED}>{summary ? `  ${summary}` : ''}</Text>
+        <Text color={MUTED}>{collapsed && summary ? `  ${summary}` : ''}</Text>
       </Button>
     )
-
     if (collapsed) {
       return <Box flexDirection="column">{header}</Box>
     }
 
+    const row = (name: string) => {
+      const skill = skillOf(name)
+      const isGone = skill === undefined
+      const isOn = pins.includes(name)
+
+      return (
+        <Box key={`row:${name}`} flexDirection="column">
+          <Box justifyContent="space-between">
+            <Box flexShrink={1}>
+              {lamp(name)}
+              <Text> </Text>
+              <Button key={`expand:${name}`} plain onPress={() => update($, expanded, all => toggled(all, name))}>
+                <Text color={isGone ? MUTED : undefined} strikethrough={isGone} wrap="truncate-end">{labelOf(name)}</Text>
+              </Button>
+            </Box>
+            <Button key={`pin:${name}`} plain onPress={() => setPinned($, name, !isOn)}>
+              {slider(isOn)}
+            </Button>
+          </Box>
+          {details.includes(name) && (
+            <Box flexDirection="column" paddingLeft={2}>
+              <Text color={MUTED} wrap="wrap">{isGone ? '已移除：這台機器上找不到這個 skill' : aboutOf(skill, name)}</Text>
+              <Button key={`fav:${name}`} plain onPress={() => setFavorite($, name, !favs.includes(name))}>
+                <Text color={MUTED}>{favs.includes(name) ? '★ 移出常用' : '☆ 加入常用'}</Text>
+              </Button>
+            </Box>
+          )}
+        </Box>
+      )
+    }
+
+    const group = (id: string, title: string, names: readonly string[]) => {
+      const shown = names.filter(matches)
+      if (shown.length === 0) {
+        return null
+      }
+      const isOpen = typed !== '' || open.includes(id)
+      const onCount = shown.filter(name => pins.includes(name)).length
+
+      return (
+        <Box key={`group:${id}`} flexDirection="column" marginTop={1}>
+          <Button key={`group:${id}`} plain onPress={() => toggleGroup($, id)}>
+            <Text color={MUTED}>{isOpen ? '▾ ' : '▸ '}</Text>
+            <Text bold>{title}</Text>
+            <Text color={MUTED}>{isOpen ? '' : `  ${shown.length}${onCount > 0 ? ` · ${onCount} 強制` : ''}`}</Text>
+          </Button>
+          {isOpen && <Box flexDirection="column" paddingLeft={2}>{shown.map(row)}</Box>}
+        </Box>
+      )
+    }
+
+    const listed = list.filter(one => one.isListed && !favs.includes(one.name))
+    const groupNames = [...new Set(listed.map(one => one.group))].sort((a, b) =>
+      a === MINE ? -1 : b === MINE ? 1 : a.localeCompare(b),
+    )
+    const active = [...new Set([...pins, ...Object.keys(done)])]
+
     return (
       <Box flexDirection="column">
         {header}
-        {SKILLS.map(skill => {
-          const isOn = always.includes(skill.id)
-          const isArmed = once.includes(skill.id)
-          const isOpen = open.includes(skill.id)
-          const isMissing = !names[skill.id]
-          const hit = counts[skill.id]
-
-          return (
-            <Box key={skill.id} flexDirection="column" marginTop={1}>
-              <Box justifyContent="space-between">
-                <Button key={`expand:${skill.id}`} plain onPress={() => toggleExpanded($, skill.id)}>
-                  <Text color={MUTED}>{isOpen ? '▾ ' : '▸ '}</Text>
-                  <Text bold={isOn} color={isMissing ? MUTED : undefined}>{skill.label}</Text>
-                  <Text color={ACCENT}>{thisTurn.includes(skill.id) ? '  ✓' : ''}</Text>
-                </Button>
-                <Box>
-                  <Button key={`once:${skill.id}`} plain onPress={() => toggleArmed($, skill.id)}>
-                    {isArmed ? <Text color={ACCENT} bold>⚡</Text> : <Text color={MUTED}>⚡</Text>}
-                  </Button>
-                  <Text> </Text>
-                  <Button key={`pin:${skill.id}`} plain onPress={() => togglePinned($, skill.id)}>
-                    {isOn ? (
-                      <Text backgroundColor={ACCENT} color={KNOB} bold>{TRACK_ON}</Text>
-                    ) : (
-                      <Text backgroundColor={MUTED} color={KNOB}>{TRACK_OFF}</Text>
-                    )}
-                  </Button>
-                </Box>
-              </Box>
-              {isOpen && (
-                <Box flexDirection="column" paddingLeft={2}>
-                  <Text color={MUTED}>{skill.about}</Text>
-                  <Text color={MUTED}>{isOn ? '常駐：開' : '常駐：關'} · {isArmed ? '⚡ 下一則：待命' : '⚡ 下一則：未啟用'}</Text>
-                  <Text color={MUTED}>
-                    {hit ? `已觸發 ${hit.count} 次 · 最近：第 ${hit.lastTurn} 則訊息` : '本次對話尚未觸發'}
-                  </Text>
-                  {isMissing && <Text color={MUTED}>未安裝在這台機器上</Text>}
-                </Box>
-              )}
+        <Box flexDirection="column" borderStyle="round" borderColor={MUTED} paddingX={1}>
+          <Text color={ACCENT} bold>作用中</Text>
+          {active.length === 0 && <Text color={MUTED}>目前沒有</Text>}
+          {active.map(name => (
+            <Box key={`active:${name}`}>
+              {lamp(name)}
+              <Text color={skillOf(name) ? undefined : MUTED} wrap="truncate-end">
+                {` ${labelOf(name)}`}
+                {pins.includes(name) ? <Text color={ACCENT}> 強制</Text> : ''}
+                {skillOf(name) ? '' : <Text color={MUTED}> 已移除</Text>}
+              </Text>
             </Box>
-          )
-        })}
-        <Box marginTop={1}>
-          <Text color={MUTED}>本回合觸發：</Text>
-          <Text color={thisTurn.length > 0 ? ACCENT : MUTED}>{thisTurn.length > 0 ? thisTurn.join('、') : '無'}</Text>
+          ))}
         </Box>
+        {Input && (
+          <Box marginTop={1}>
+            <Input
+              key="search"
+              placeholder="搜尋 skill…"
+              value={rawQuery}
+              onInput={text => void update($, query, () => text)}
+              onSubmit={text => void update($, query, () => text)}
+            />
+          </Box>
+        )}
+        {group(FAVORITES, '★ 常用', favs)}
+        {groupNames.map(name => group(name, name, listed.filter(one => one.group === name).map(one => one.name)))}
+        {toggle && (
+          <Box marginTop={1} justifyContent="space-between">
+            <Text bold>{toggle.label}</Text>
+            <Button key="remote" plain onPress={() => flipRemote($)}>
+              {slider(toggle.value)}
+            </Button>
+          </Box>
+        )}
       </Box>
     )
   })
