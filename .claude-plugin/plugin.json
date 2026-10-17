@@ -1,6 +1,6 @@
 {
   "name": "skill-dashboard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Side-panel dashboard for academic-humanizer and the four ARS skills: slide switches to keep a skill on, a one-shot button for the next message, and a live record of when each skill was actually triggered",
   "author": { "name": "alexlingy" },
   "types": "./types/index.d.ts"
