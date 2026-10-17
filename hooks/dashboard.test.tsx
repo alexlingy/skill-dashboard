@@ -51,26 +51,34 @@ test('lists every skill by group, favorites first, and the switch makes a skill 
 
     // The five skills the dashboard started with are the default favorites, by their own labels.
     expect(await ui.find({ type: 'Text', text: '★ 常用' })).toBeDefined()
-    expect(await ui.find({ key: 'pin:academic-humanizer' })).toBeDefined()
+    expect(await ui.find({ key: 'expand:academic-humanizer' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Paper Reviewer' })).toBeDefined()
     // Other groups start folded, with a count; a built-in and the dashboard's own command are not listed.
     expect(await ui.find({ type: 'Text', text: 'mattpocock-skills' })).toBeDefined()
-    expect(await ui.find({ key: 'pin:mattpocock-skills:tdd' })).toBeUndefined()
-    expect(await ui.find({ key: 'pin:init' })).toBeUndefined()
-    expect(await ui.find({ key: 'pin:skill-dashboard' })).toBeUndefined()
+    expect(await ui.find({ key: 'expand:mattpocock-skills:tdd' })).toBeUndefined()
+    expect(await ui.find({ key: 'expand:init' })).toBeUndefined()
+    expect(await ui.find({ key: 'expand:skill-dashboard' })).toBeUndefined()
     await ui.press({ key: 'group:mattpocock-skills' })
-    expect(await ui.find({ key: 'pin:mattpocock-skills:tdd' })).toBeDefined()
+    expect(await ui.find({ key: 'expand:mattpocock-skills:tdd' })).toBeDefined()
     await ui.press({ key: 'group:mattpocock-skills' })
 
-    // The switch draws its track, and the active box says the skill is switched on.
+    // The terminal's switch draws its track; off the terminal the row shows a pill, and the press is a
+    // button in the opened details. Either way the active box says the skill is switched on.
+    const isTerminal = surface === 'terminal'
+    if (!isTerminal) {
+      expect(await ui.find({ key: 'pin:academic-humanizer' })).toBeUndefined()
+      await ui.press({ key: 'expand:academic-humanizer' })
+      expect((await ui.find({ key: 'pin:academic-humanizer' }))?.text).toBe('改為強制')
+    }
     await ui.press({ key: 'pin:academic-humanizer' })
-    // Off the terminal the gaps are non-breaking spaces, so a native button keeps the knob where it is.
-    const gap = surface === 'terminal' ? '   ' : '   '
-    expect((await ui.find({ key: 'pin:academic-humanizer' }))?.text).toBe(`${gap}●`)
+    expect((await ui.find({ key: 'pin:academic-humanizer' }))?.text).toBe(isTerminal ? '   ●' : '改為自動')
     expect((await ui.find({ key: 'active:academic-humanizer' }))?.text).toContain('強制')
     await ui.press({ key: 'pin:academic-humanizer' })
-    expect((await ui.find({ key: 'pin:academic-humanizer' }))?.text).toBe(`●${gap}`)
+    expect((await ui.find({ key: 'pin:academic-humanizer' }))?.text).toBe(isTerminal ? '●   ' : '改為強制')
     expect(await ui.find({ key: 'active:academic-humanizer' })).toBeUndefined()
+    if (!isTerminal) {
+      await ui.press({ key: 'expand:academic-humanizer' })
+    }
     await ui.unmount()
   }
 
@@ -124,10 +132,10 @@ test('details, favorites and search', async ($, on) => {
 
     // Typing narrows every group, folded ones included, to what matches.
     await ui.input({ key: 'search', text: 'tdd', kind: 'change' })
-    expect(await ui.find({ key: 'pin:mattpocock-skills:tdd' })).toBeDefined()
-    expect(await ui.find({ key: 'pin:academic-humanizer' })).toBeUndefined()
+    expect(await ui.find({ key: 'expand:mattpocock-skills:tdd' })).toBeDefined()
+    expect(await ui.find({ key: 'expand:academic-humanizer' })).toBeUndefined()
     await ui.input({ key: 'search', text: '', kind: 'change' })
-    expect(await ui.find({ key: 'pin:academic-humanizer' })).toBeDefined()
+    expect(await ui.find({ key: 'expand:academic-humanizer' })).toBeDefined()
 
     await ui.unmount()
   }
@@ -135,7 +143,7 @@ test('details, favorites and search', async ($, on) => {
   // Mobile has no text field: no search there, the list still draws.
   const phone = await $.ui.mount({ plugin: 'skill-dashboard', surface: 'mobile', ...PANE })
   expect(await phone.find({ key: 'search' })).toBeUndefined()
-  expect(await phone.find({ key: 'pin:academic-humanizer' })).toBeDefined()
+  expect(await phone.find({ key: 'expand:academic-humanizer' })).toBeDefined()
   await phone.unmount()
 })
 
@@ -193,16 +201,22 @@ test('the panel folds to one summary line and back', async ($, on) => {
 
   for (const surface of ['terminal', 'desktop', 'mobile'] as const) {
     const ui = await $.ui.mount({ plugin: 'skill-dashboard', surface, ...PANE })
-    await ui.press({ key: 'pin:academic-humanizer' })
+    // Off the terminal the switch's press is in the skill's opened details.
+    const flip = async () => {
+      if (surface !== 'terminal') await ui.press({ key: 'expand:academic-humanizer' })
+      await ui.press({ key: 'pin:academic-humanizer' })
+      if (surface !== 'terminal') await ui.press({ key: 'expand:academic-humanizer' })
+    }
+    await flip()
 
     await ui.press({ key: 'panel' })
-    expect(await ui.find({ key: 'pin:academic-humanizer' })).toBeUndefined()
+    expect(await ui.find({ key: 'expand:academic-humanizer' })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /1 強制/ })).toBeDefined()
 
     await ui.press({ key: 'panel' })
-    expect(await ui.find({ key: 'pin:academic-humanizer' })).toBeDefined()
+    expect(await ui.find({ key: 'expand:academic-humanizer' })).toBeDefined()
 
-    await ui.press({ key: 'pin:academic-humanizer' })
+    await flip()
     await ui.unmount()
   }
 })

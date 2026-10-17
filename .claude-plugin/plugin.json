@@ -1,6 +1,6 @@
 {
   "name": "skill-dashboard",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Side-panel dashboard for every installed skill: a lamp that shows whether each one was loaded, a slide switch that makes a skill load in every conversation, favorites, search, and a Remote Control toggle",
   "author": { "name": "alexlingy" },
   "types": "./types/index.d.ts"
